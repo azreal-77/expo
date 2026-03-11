@@ -47,14 +47,18 @@ const href_1 = require("./href");
 const useLinkHooks_1 = require("./useLinkHooks");
 const useLinkToPathProps_1 = __importDefault(require("./useLinkToPathProps"));
 const Prefetch_1 = require("../Prefetch");
+const hooks_1 = require("../hooks");
 const Slot_1 = require("../ui/Slot");
+const useNavigation_1 = require("../useNavigation");
 function BaseExpoRouterLink({ href, replace, push, dismissTo, 
 // TODO: This does not prevent default on the anchor tag.
-relativeToDirectory, asChild, rel, target, download, withAnchor, dangerouslySingular: singular, prefetch, ...rest }) {
+relativeToDirectory, asChild, rel, target, download, withAnchor, withZoomTransition, dangerouslySingular: singular, prefetch, ...rest }) {
     // Mutate the style prop to add the className on web.
     const style = (0, useLinkHooks_1.useInteropClassName)(rest);
     // If not passing asChild, we need to forward the props to the anchor tag using React Native Web's `hrefAttrs`.
     const hrefAttrs = (0, useLinkHooks_1.useHrefAttrs)({ asChild, rel, target, download });
+    const router = (0, hooks_1.useRouter)();
+    const navigation = (0, useNavigation_1.useNavigation)();
     const resolvedHref = (0, react_1.useMemo)(() => {
         if (href == null) {
             throw new Error('Link: href is required');
@@ -68,6 +72,15 @@ relativeToDirectory, asChild, rel, target, download, withAnchor, dangerouslySing
         event = 'REPLACE';
     if (dismissTo)
         event = 'POP_TO';
+    // State to manage prefetch-then-navigate for zoom transitions.
+    const [zoomPrefetched, setZoomPrefetched] = (0, react_1.useState)(false);
+    // After prefetch, navigate on the next render
+    (0, react_1.useEffect)(() => {
+        if (zoomPrefetched) {
+            setZoomPrefetched(false);
+            props.onPress();
+        }
+    }, [zoomPrefetched]);
     const previewContext = (0, react_1.use)(InternalLinkPreviewContext_1.InternalLinkPreviewContext);
     const props = (0, useLinkToPathProps_1.default)({
         href: resolvedHref,
@@ -82,6 +95,19 @@ relativeToDirectory, asChild, rel, target, download, withAnchor, dangerouslySing
         }
         if ('onPress' in rest) {
             rest.onPress?.(e);
+        }
+        // Zoom transitions: prefetch the route first, then navigate on next render.
+        // This ensures the target screen component is mounted before the zoom animation starts.
+        // We only prefetch when the current screen is focused
+        // Otherwise the prefetch can cause unexpected behavior,
+        // when currently dismissed screen gets prefetched
+        if (withZoomTransition && navigation.isFocused()) {
+            if (!e?.defaultPrevented) {
+                e?.preventDefault();
+                router.prefetch(resolvedHref);
+                setZoomPrefetched(true);
+            }
+            return;
         }
         props.onPress(e);
     };
